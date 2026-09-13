@@ -35,7 +35,7 @@
 *.lib
 
 # Executables
-*.exe
+# *.exe (commented out - we want to track the compiled binary)
 *.out
 *.app
 
@@ -67,3 +67,4 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+src/flutter/
