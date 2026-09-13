@@ -68,3 +68,4 @@ vcpkg_installed/
 Testing/
 .cache/
 src/flutter/
+__pycache__/
