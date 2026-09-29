@@ -665,6 +665,22 @@ class _GamepadPageState extends State<GamepadPage> {
               ),
             ],
           ),
+          if (mode == ConnectionMode.wifi)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 6),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.lightBlue.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.lightBlue.withValues(alpha: 0.4)),
+              ),
+              child: const Text(
+                'Wi-Fi mode: No cable needed. Connect phone and PC to the same Wi-Fi.\n'
+                'On PC run ipconfig, find Wireless LAN adapter Wi-Fi -> IPv4 (e.g. 192.168.1.10) and enter it above.',
+                style: TextStyle(fontSize: 11, color: Colors.lightBlueAccent),
+              ),
+            ),
           if (mode == ConnectionMode.usb)
             Container(
               width: double.infinity,

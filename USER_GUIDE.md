@@ -8,25 +8,29 @@ This guide is for anyone installing the APK on their phone. No coding needed.
 - Android phone
 - USB Type-C cable (for USB mode) or same Wi-Fi network (for Wi-Fi mode)
 - `VirtualGamepad-v1.0.apk` from `releases/` folder
-- `VirtualControllerServer.exe` on the PC
-
-On the PC you also need the ViGEmBus driver (one-time install):
-https://github.com/nefarius/ViGEmBus/releases - download ViGEmBusSetup_x64.msi and install, then restart PC.
+- `Start-Gamepad.bat` + `VirtualControllerServer.exe` on the PC (keep both in SAME folder)
 
 ---
 
-## 1. PC Setup (One Time)
+## 1. PC Setup
 
-1. Install ViGEmBus driver from the link above.
-2. Copy `VirtualControllerServer.exe` to a folder on your PC (e.g. Desktop).
-3. Windows Firewall: allow UDP port 8888 when prompted. If not prompted, open Windows Defender Firewall > Advanced settings > Inbound Rules > New Rule > Port > UDP 8888 > Allow.
-4. Double-click `VirtualControllerServer.exe` to run it. You should see:
+You must run `Start-Gamepad.bat` **every time** you want to play. It auto-checks/installs ViGEmBus, opens firewall, shows your IP, and starts the server. Keep its window open while playing.
+
+1. Copy **both** `Start-Gamepad.bat` and `VirtualControllerServer.exe` to a folder on your PC (e.g. Desktop). Do not separate them.
+2. Double-click `Start-Gamepad.bat` to run it. If Windows asks, click Yes on the UAC prompt.
+   - If ViGEmBus is missing, the launcher will try to download and install it automatically (needs internet). If download fails, it will show a link: https://github.com/nefarius/ViGEmBus/releases - download ViGEmBusSetup_x64.msi, install, restart PC, then run the launcher again.
+   - It will also add a firewall rule for UDP 8888.
+   - It prints your IP addresses - note the one for your mode (Wi-Fi or USB).
+3. When ready you should see:
    ```
+   [+] ViGEmBus found.
+   [+] Firewall rule already exists.
    [+] UDP Socket listening on port 8888
    [+] Virtual Xbox 360 Controller connected to Windows!
    [*] Ready to receive mobile controller inputs...
    ```
-   Keep this window open while playing. To test, open `joy.cpl` (Windows + R, type joy.cpl) - you should see "Xbox 360 Controller" and it will respond when the phone is connected.
+   Keep this window OPEN while playing. Close window or Ctrl+C to disconnect. To test, open `joy.cpl` (Windows + R, type joy.cpl) - you should see "Xbox 360 Controller" and it will respond when the phone is connected.
+4. On first ViGEmBus install you must restart PC once, then run the launcher again.
 
 ---
 
@@ -127,10 +131,11 @@ Invalid packets, disconnects, and shutdowns are handled safely - no crash.
 ## 8. Files in This Repo
 
 - `releases/VirtualGamepad-v1.0.apk` - Release APK (shareable)
-- `VirtualControllerServer.exe` - Windows server (run on PC)
+- `Start-Gamepad.bat` - Launcher to run every time (auto-handles ViGEmBus + firewall + shows IP + starts server; keep both exe+bat together)
+- `VirtualControllerServer.exe` - Windows server (run via launcher)
 - `VirtualControllerServer.cpp` / `src/ViGEmClient.cpp` / `include/` - Server source
 - `android_app/` - Flutter app source
-- `BUILD.md` - Build instructions for developers
+- `BUILD.md` - Build instructions for developers (or just double-click the .bat)
 - `USER_GUIDE.md` - This guide
 
 ---
