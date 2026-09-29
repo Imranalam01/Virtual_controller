@@ -68,6 +68,9 @@ class _GamepadPageState extends State<GamepadPage> {
   // ignore: unused_field
   bool _prefsLoaded = false;
 
+  // true = show controller, false = show settings/connect page
+  bool _showController = false;
+
   // ----- RUMBLE: rate limiting -----
   DateTime _lastVibration = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _vibrationThrottle = Duration(milliseconds: 30);
@@ -84,6 +87,7 @@ class _GamepadPageState extends State<GamepadPage> {
       final savedIp = prefs.getString('serverIp');
       final savedVib = prefs.getBool('vibrationEnabled');
       final savedModeIndex = prefs.getInt('connectionMode');
+      final savedShowController = prefs.getBool('showController');
       setState(() {
         if (savedIp != null && savedIp.isNotEmpty) {
           serverIp = savedIp;
@@ -95,10 +99,11 @@ class _GamepadPageState extends State<GamepadPage> {
             savedModeIndex < ConnectionMode.values.length) {
           mode = ConnectionMode.values[savedModeIndex];
         }
+        if (savedShowController != null) _showController = savedShowController;
         _prefsLoaded = true;
       });
       if (mode == ConnectionMode.auto && savedIp != null) {
-        _connect();
+        await _connect(autoNavigate: false);
       }
     } catch (_) {
       setState(() => _prefsLoaded = true);
@@ -111,6 +116,7 @@ class _GamepadPageState extends State<GamepadPage> {
       await prefs.setString('serverIp', serverIp);
       await prefs.setBool('vibrationEnabled', vibrationEnabled);
       await prefs.setInt('connectionMode', mode.index);
+      await prefs.setBool('showController', _showController);
     } catch (_) {}
   }
 
@@ -170,12 +176,9 @@ class _GamepadPageState extends State<GamepadPage> {
 
   // ============================================================
   // RUMBLE: haptics with relative strength + throttling
-  // - Honors vibrationEnabled switch (OFF = ignore)
-  // - Throttled to max one per 30ms
-  // - largeMotor 0-255 -> 100-300ms, amplitude proportional
-  // - smallMotor lighter/shorter
-  // - Uses Vibration.vibrate when available, fallback HapticFeedback
   // ============================================================
+  // ignore_for_file: unnecessary_nullable_for_final_variable_declarations
+
   Future<void> _triggerRumble(int large, int small) async {
     if (!vibrationEnabled) return;
     final now = DateTime.now();
@@ -193,10 +196,8 @@ class _GamepadPageState extends State<GamepadPage> {
       amplitude = (small ~/ 2).clamp(1, 255);
     }
     try {
-      // ignore: unnecessary_nullable_for_final_variable_declarations
       final bool? hasVibrator = await Vibration.hasVibrator();
       if (hasVibrator == true) {
-        // ignore: unnecessary_nullable_for_final_variable_declarations
         final bool? hasAmp = await Vibration.hasAmplitudeControl();
         if (hasAmp == true) {
           await Vibration.vibrate(duration: durationMs, amplitude: amplitude);
@@ -217,7 +218,7 @@ class _GamepadPageState extends State<GamepadPage> {
     } catch (_) {}
   }
 
-  Future<void> _connect() async {
+  Future<void> _connect({bool autoNavigate = true}) async {
     final String ip = ipController.text.trim();
     if (ip.isEmpty) {
       setState(() => statusText = 'Enter PC IP address');
@@ -239,6 +240,10 @@ class _GamepadPageState extends State<GamepadPage> {
       await sendPacket();
       if (!mounted) return;
       setState(() => statusText = 'Connected to $ip:$serverPort');
+      if (autoNavigate) {
+        setState(() => _showController = true);
+        await _savePrefs();
+      }
     }
   }
 
@@ -508,18 +513,18 @@ class _GamepadPageState extends State<GamepadPage> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        dpadButton('▲', 0x0001),
+        dpadButton('\u25B2', 0x0001),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            dpadButton('◀', 0x0004),
+            dpadButton('\u25C0', 0x0004),
             const SizedBox(width: 4),
-            dpadButton('●', 0),
+            dpadButton('\u25CF', 0),
             const SizedBox(width: 4),
-            dpadButton('▶', 0x0008),
+            dpadButton('\u25B6', 0x0008),
           ],
         ),
-        dpadButton('▼', 0x0002),
+        dpadButton('\u25BC', 0x0002),
       ],
     );
   }
@@ -551,261 +556,335 @@ class _GamepadPageState extends State<GamepadPage> {
     );
   }
 
-  Widget analogStickPlaceholder(String label) {
-    return Container(
-      width: 110,
-      height: 110,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.grey.shade900,
-        border: Border.all(
-          color: Colors.grey.shade600,
-          width: 3,
-        ),
-      ),
-      alignment: Alignment.center,
-      child: Container(
-        width: 65,
-        height: 65,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.grey.shade700,
-          border: Border.all(
-            color: Colors.grey.shade500,
-            width: 2,
-          ),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildConnectionBar() {
-    return Container(
-      color: const Color(0xFF1E1E1E),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SegmentedButton<ConnectionMode>(
-              segments: const [
-                ButtonSegment(value: ConnectionMode.wifi, label: Text('Wi-Fi'), icon: Icon(Icons.wifi, size: 18)),
-                ButtonSegment(value: ConnectionMode.usb, label: Text('USB'), icon: Icon(Icons.usb, size: 18)),
-                ButtonSegment(value: ConnectionMode.auto, label: Text('Auto'), icon: Icon(Icons.autorenew, size: 18)),
-              ],
-              selected: <ConnectionMode>{mode},
-              onSelectionChanged: (Set<ConnectionMode> s) {
-                setState(() => mode = s.first);
-                _savePrefs();
+  // ============================================================
+  // SETTINGS PAGE - dedicated connection + vibration screen
+  // ============================================================
+  Widget _buildSettingsPage() {
+    return Scaffold(
+      backgroundColor: const Color(0xFF151515),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Connection', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        actions: [
+          if (isConnected)
+            TextButton.icon(
+              onPressed: () async {
+                setState(() => _showController = true);
+                await _savePrefs();
               },
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: ipController,
-                  decoration: const InputDecoration(
-                    labelText: 'PC IP Address',
-                    hintText: '192.168.1.10',
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  ),
-                  keyboardType: TextInputType.numberWithOptions(decimal: true),
-                  onSubmitted: (_) => _connect(),
-                  onChanged: (v) {
-                    serverIp = v.trim();
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: isConnected ? _disconnect : _connect,
-                child: Text(isConnected ? 'Disconnect' : 'Connect'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              const Icon(Icons.vibration, size: 18),
-              const SizedBox(width: 6),
-              const Text('Vibration', style: TextStyle(fontSize: 13)),
-              Switch(
-                value: vibrationEnabled,
-                onChanged: (v) {
-                  setState(() => vibrationEnabled = v);
-                  _savePrefs();
-                },
-              ),
-              Text(vibrationEnabled ? 'ON' : 'OFF',
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: vibrationEnabled ? Colors.greenAccent : Colors.grey)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  statusText,
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: isConnected ? Colors.greenAccent : Colors.orangeAccent),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          if (mode == ConnectionMode.wifi)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(top: 6),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.lightBlue.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.lightBlue.withValues(alpha: 0.4)),
-              ),
-              child: const Text(
-                'Wi-Fi mode: No cable needed. Connect phone and PC to the same Wi-Fi.\n'
-                'On PC run ipconfig, find Wireless LAN adapter Wi-Fi -> IPv4 (e.g. 192.168.1.10) and enter it above.',
-                style: TextStyle(fontSize: 11, color: Colors.lightBlueAccent),
-              ),
-            ),
-          if (mode == ConnectionMode.usb)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(top: 6),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
-              ),
-              child: const Text(
-                'USB mode: On phone enable Settings > Hotspot & tethering > USB tethering.\n'
-                'Then on PC run ipconfig and find the RNDIS adapter IP (e.g. 192.168.42.x or 192.168.137.x) and enter it above. '
-                'Keep USB cable plugged in. No Wi-Fi needed.',
-                style: TextStyle(fontSize: 11, color: Colors.amberAccent),
-              ),
-            ),
-          if (mode == ConnectionMode.auto)
-            const Padding(
-              padding: EdgeInsets.only(top: 4),
-              child: Text('Auto: connects to saved IP on start. Edit IP if needed then tap Connect.',
-                  style: TextStyle(fontSize: 11, color: Colors.grey)),
+              icon: const Icon(Icons.gamepad, size: 18, color: Colors.white),
+              label: const Text('Controller', style: TextStyle(color: Colors.white)),
             ),
         ],
       ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-    return Scaffold(
-      backgroundColor: const Color(0xFF151515),
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildConnectionBar(),
-            const Divider(height: 1, color: Colors.white12),
-            SizedBox(
-              height: 55,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 18),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        shoulderButton('LB', 0x0100),
-                        const SizedBox(width: 6),
-                        triggerButton('LT', left: true),
-                      ],
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SegmentedButton<ConnectionMode>(
+                segments: const [
+                  ButtonSegment(value: ConnectionMode.wifi, label: Text('Wi-Fi'), icon: Icon(Icons.wifi, size: 18)),
+                  ButtonSegment(value: ConnectionMode.usb, label: Text('USB'), icon: Icon(Icons.usb, size: 18)),
+                  ButtonSegment(value: ConnectionMode.auto, label: Text('Auto'), icon: Icon(Icons.autorenew, size: 18)),
+                ],
+                selected: <ConnectionMode>{mode},
+                onSelectionChanged: (Set<ConnectionMode> s) {
+                  setState(() => mode = s.first);
+                  _savePrefs();
+                },
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: ipController,
+                      decoration: const InputDecoration(
+                        labelText: 'PC IP Address',
+                        hintText: '192.168.1.10',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
+                      onSubmitted: (_) => _connect(),
+                      onChanged: (v) => serverIp = v.trim(),
                     ),
-                    Row(
-                      children: [
-                        triggerButton('RT', left: false),
-                        const SizedBox(width: 6),
-                        shoulderButton('RB', 0x0200),
-                      ],
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    onPressed: isConnected ? _disconnect : _connect,
+                    style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14)),
+                    child: Text(isConnected ? 'Disconnect' : 'Connect'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isConnected ? Colors.green.withValues(alpha: 0.12) : Colors.orange.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: isConnected ? Colors.green.withValues(alpha: 0.4) : Colors.orange.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(isConnected ? Icons.circle : Icons.circle_outlined, size: 10, color: isConnected ? Colors.greenAccent : Colors.orangeAccent),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(statusText, style: TextStyle(fontSize: 12, color: isConnected ? Colors.greenAccent : Colors.orangeAccent)),
                     ),
                   ],
                 ),
               ),
-            ),
-            Expanded(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.contain,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          dpad(),
-                          const SizedBox(height: 10),
-                          analogStick(left: true),
-                        ],
-                      ),
+              const SizedBox(height: 18),
+              const Divider(color: Colors.white12),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.vibration, size: 20),
+                        const SizedBox(width: 8),
+                        const Text('Vibration', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                        const Spacer(),
+                        Text(vibrationEnabled ? 'ON' : 'OFF', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: vibrationEnabled ? Colors.greenAccent : Colors.grey)),
+                        const SizedBox(width: 8),
+                        Switch(
+                          value: vibrationEnabled,
+                          onChanged: (v) {
+                            setState(() => vibrationEnabled = v);
+                            _savePrefs();
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      vibrationEnabled
+                          ? 'Phone will vibrate on game rumble. Strength of large/small motors is preserved.'
+                          : 'Rumble packets are ignored. Phone will not vibrate.',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (mode == ConnectionMode.wifi)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.lightBlue.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.lightBlue.withValues(alpha: 0.4)),
+                  ),
+                  child: const Text(
+                    'Wi-Fi mode: No cable needed. Connect phone and PC to the same Wi-Fi.\nOn PC run Start-Gamepad.bat or ipconfig, find Wireless LAN adapter Wi-Fi -> IPv4 (e.g. 192.168.1.10) and enter it above.',
+                    style: TextStyle(fontSize: 12, color: Colors.lightBlueAccent),
+                  ),
+                ),
+              if (mode == ConnectionMode.usb)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                  ),
+                  child: const Text(
+                    'USB mode: Plug phone to PC with USB cable, then on phone enable Settings > Hotspot & tethering > USB tethering.\nThen on PC run Start-Gamepad.bat or ipconfig and find Remote NDIS adapter IP (e.g. 192.168.42.x or 192.168.137.x) and enter it above. Keep cable plugged in.',
+                    style: TextStyle(fontSize: 12, color: Colors.amberAccent),
+                  ),
+                ),
+              if (mode == ConnectionMode.auto)
+                const Text('Auto: connects to saved IP on start. Edit IP if needed then tap Connect.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: isConnected
+                    ? () async {
+                        setState(() => _showController = true);
+                        await _savePrefs();
+                      }
+                    : _connect,
+                icon: Icon(isConnected ? Icons.sports_esports : Icons.link),
+                label: Text(isConnected ? 'Open Controller' : 'Connect and Play'),
+                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+              ),
+              if (!isConnected) const SizedBox(height: 8),
+              if (!isConnected)
+                OutlinedButton(
+                  onPressed: () async {
+                    setState(() => _showController = true);
+                    await _savePrefs();
+                  },
+                  child: const Text('Open Controller Anyway'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // CONTROLLER PAGE - pure gamepad, no connection bar
+  // ============================================================
+  Widget _buildControllerPage() {
+    return Scaffold(
+      backgroundColor: const Color(0xFF151515),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                SizedBox(
+                  height: 55,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            shoulderButton('LB', 0x0100),
+                            const SizedBox(width: 6),
+                            triggerButton('LT', left: true),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            triggerButton('RT', left: false),
+                            const SizedBox(width: 6),
+                            shoulderButton('RB', 0x0200),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                  Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.contain,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              smallButton('VIEW', 0x0020),
-                              smallButton('MENU', 0x0010),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'VIRTUAL GAMEPAD',
-                            style: TextStyle(
-                              fontSize: 11,
-                              letterSpacing: 2,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.contain,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          controllerButton('Y', 0x8000),
-                          Row(
+                ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.contain,
+                          child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              controllerButton('X', 0x4000),
-                              controllerButton('B', 0x2000),
+                              dpad(),
+                              const SizedBox(height: 10),
+                              analogStick(left: true),
                             ],
                           ),
-                          controllerButton('A', 0x1000),
-                          const SizedBox(height: 8),
-                          analogStick(left: false),
-                        ],
+                        ),
+                      ),
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.contain,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  smallButton('VIEW', 0x0020),
+                                  smallButton('MENU', 0x0010),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'VIRTUAL GAMEPAD',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  letterSpacing: 2,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              if (!isConnected)
+                                Container(
+                                  margin: const EdgeInsets.only(top: 8),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
+                                  child: const Text('Not connected', style: TextStyle(fontSize: 9, color: Colors.orangeAccent)),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.contain,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              controllerButton('Y', 0x8000),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  controllerButton('X', 0x4000),
+                                  controllerButton('B', 0x2000),
+                                ],
+                              ),
+                              controllerButton('A', 0x1000),
+                              const SizedBox(height: 8),
+                              analogStick(left: false),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            Positioned(
+              top: 4,
+              right: 8,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(isConnected ? Icons.circle : Icons.circle_outlined, size: 8, color: isConnected ? Colors.greenAccent : Colors.orangeAccent),
+                        const SizedBox(width: 4),
+                        Icon(vibrationEnabled ? Icons.vibration : Icons.vibration_outlined, size: 12, color: vibrationEnabled ? Colors.greenAccent : Colors.grey),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Material(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () async {
+                        setState(() => _showController = false);
+                        await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+                        await _savePrefs();
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Icon(Icons.settings, size: 20, color: Colors.white70),
                       ),
                     ),
                   ),
@@ -815,16 +894,21 @@ class _GamepadPageState extends State<GamepadPage> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.small(
-        heroTag: 'vibToggle',
-        backgroundColor: vibrationEnabled ? Colors.green.shade700 : Colors.grey.shade700,
-        onPressed: () {
-          setState(() => vibrationEnabled = !vibrationEnabled);
-          _savePrefs();
-        },
-        child: Icon(vibrationEnabled ? Icons.vibration : Icons.phone_android_outlined, size: 18),
-      ),
     );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showController) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      return _buildControllerPage();
+    } else {
+      SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+      return _buildSettingsPage();
+    }
   }
 }
 
