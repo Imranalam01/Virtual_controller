@@ -23,23 +23,16 @@ Phone (Flutter app) -> Windows C++ server over UDP port 8888 -> ViGEmBus virtual
 - `test_sender.py` - Python test client for simulating controller inputs
 - `USER_GUIDE.md` - Step-by-step guide for Wi-Fi and USB setup
 
-## Quick Start (Wi-Fi)
+## Quick Start
 
-1. Install [ViGEmBus 1.22.0](https://github.com/nefarius/ViGEmBus/releases) on PC and restart
-2. Run `./VirtualControllerServer.exe` on PC (keep open, allow UDP 8888)
-3. On PC terminal run `ipconfig` to get Wi-Fi IPv4 (e.g. 192.168.1.10)
-4. Install `releases/VirtualGamepad-v1.0.apk` on phone, open app
-5. Select **Wi-Fi** mode, enter PC IP, tap **Connect**
-6. Open `joy.cpl` on Windows to see the virtual controller respond
+No manual driver install needed. Use the launcher:
 
-## USB Cable Mode (No Wi-Fi)
-
-Just plugging the USB cable is not enough - you must enable USB tethering so the cable carries a network (RNDIS):
-
-1. Plug phone to PC with USB Type-C cable
-2. On phone: Settings > Network & Internet > Hotspot & tethering > Enable **USB tethering**
-3. On PC: `ipconfig` -> find `Remote NDIS based Internet Sharing Device` -> note IPv4 (e.g. `192.168.42.129` or `192.168.137.1`)
-4. In app select **USB** mode, enter that IP, tap **Connect**. Keep cable and tethering ON.
+1. Download `Start-Gamepad.bat` and `VirtualControllerServer.exe` (keep both in SAME folder on PC)
+2. Double-click `Start-Gamepad.bat` every time you want to play (keep its window open). It auto-checks ViGEmBus (auto-downloads if missing), adds firewall UDP 8888, shows your PC IPs, and starts the server. Allow Yes on UAC if asked. On first ViGEmBus install, restart PC once then run the launcher again.
+3. Install `releases/VirtualGamepad-v1.0.apk` on phone, open app
+4. For Wi-Fi (no cable): connect phone + PC to same Wi-Fi, use Wireless LAN IPv4 shown in launcher / `ipconfig`, select **Wi-Fi** in app, enter IP, tap **Connect**
+5. For USB (no Wi-Fi): plug USB cable, on phone enable Settings > Hotspot & tethering > **USB tethering**, use Remote NDIS IPv4 shown in launcher / `ipconfig` (e.g. 192.168.42.x), select **USB** in app, enter IP, tap **Connect**
+6. Open `joy.cpl` on Windows to see the virtual controller respond. Keep launcher window open while playing. Close it to disconnect.
 
 No ADB or developer mode needed. See USER_GUIDE.md for full steps and troubleshooting.
 
@@ -50,10 +43,10 @@ Games that use Xbox rumble will vibrate the phone. Use the **Vibration** switch 
 ## Downloads
 
 - APK: `releases/VirtualGamepad-v1.0.apk` (install on phone)
-- Server: `VirtualControllerServer.exe` (run on PC)
-- ViGEmBus driver: https://github.com/nefarius/ViGEmBus/releases
+- Launcher: `Start-Gamepad.bat` + `VirtualControllerServer.exe` (keep together on PC, double-click .bat every time)
+- ViGEmBus auto-handled by launcher; manual: https://github.com/nefarius/ViGEmBus/releases
 
-Full setup for a friend: install ViGEmBus once, copy APK + exe, follow USER_GUIDE.md.
+Full setup for a friend: download apk + bat + exe from GitHub, run bat on PC, install apk on phone, enter IP shown in bat window.
 
 ## Build From Source
 
