@@ -69,3 +69,5 @@ Testing/
 .cache/
 src/flutter/
 __pycache__/
+packet_test.exe
+structure.txt
