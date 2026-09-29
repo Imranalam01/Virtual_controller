@@ -27,7 +27,7 @@ Phone (Flutter app) -> Windows C++ server over UDP port 8888 -> ViGEmBus virtual
 
 1. Install [ViGEmBus 1.22.0](https://github.com/nefarius/ViGEmBus/releases) on PC and restart
 2. Run `./VirtualControllerServer.exe` on PC (keep open, allow UDP 8888)
-3. On PC run `ipconfig` to get Wi-Fi IPv4 (e.g. 192.168.1.10)
+3. On PC terminal run `ipconfig` to get Wi-Fi IPv4 (e.g. 192.168.1.10)
 4. Install `releases/VirtualGamepad-v1.0.apk` on phone, open app
 5. Select **Wi-Fi** mode, enter PC IP, tap **Connect**
 6. Open `joy.cpl` on Windows to see the virtual controller respond
